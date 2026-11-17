@@ -18,8 +18,6 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "dma.h"
-#include "dmamux.h"
 #include "fdcan.h"
 #include "spi.h"
 #include "tim.h"
@@ -99,113 +97,6 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-static void servo_restart_receive(UART_HandleTypeDef *uart_handle,
-                                  uint8_t *rx_data,
-                                  uint16_t size)
-{
-  HAL_StatusTypeDef ret = HAL_UART_Receive_IT(uart_handle, rx_data, size);
-
-  if (ret != HAL_OK && ret != HAL_BUSY)
-  {
-    servo_rx_restart_error_count++;
-  }
-}
-
-static void servo_delay_us(uint32_t delay_us)
-{
-  uint16_t previous_count = __HAL_TIM_GET_COUNTER(&htim14);
-  uint32_t elapsed_us = 0;
-
-  while (elapsed_us < delay_us)
-  {
-    uint16_t current_count = __HAL_TIM_GET_COUNTER(&htim14);
-
-    if (current_count >= previous_count)
-    {
-      elapsed_us += current_count - previous_count;
-    }
-    else
-    {
-      elapsed_us += 1000U - previous_count + current_count;
-    }
-    previous_count = current_count;
-  }
-}
-
-// static HAL_StatusTypeDef servo_transmit(UART_HandleTypeDef *uart_handle,
-//                                         uint8_t *tx_data,
-//                                         uint16_t size,
-//                                         uint16_t enable_pin)
-// {
-//   HAL_StatusTypeDef ret;
-
-//   HAL_GPIO_WritePin(GPIOA, enable_pin, GPIO_PIN_SET);
-//   if (uart_handle->Instance == USART3)
-//   {
-//     ret = HAL_UART_Transmit(uart_handle, tx_data, size, 10);
-//     //HAL_GPIO_WritePin(GPIOA, enable_pin, GPIO_PIN_RESET);
-//   }
-//   else
-//   {
-//     ret = HAL_UART_Transmit_IT(uart_handle, tx_data, size);
-//   }
-
-//   if (ret != HAL_OK)
-//   {
-//     if (uart_handle->Instance != USART3)
-//     {
-//       HAL_GPIO_WritePin(GPIOA, enable_pin, GPIO_PIN_RESET);
-//     }
-//     if (ret == HAL_BUSY)
-//     {
-//       servo_tx_busy_count++;
-//     }
-//     else
-//     {
-//       servo_tx_error_count++;
-//     }
-//   }
-
-//   return ret;
-// }
-
-// static void servo_restart_receive(UART_HandleTypeDef *uart_handle,
-//                                   uint8_t *rx_data,
-//                                   uint16_t size)
-// {
-//   HAL_StatusTypeDef ret = HAL_UART_Receive_IT(uart_handle, rx_data, size);
-
-//   if (ret != HAL_OK && ret != HAL_BUSY)
-//   {
-//     servo_rx_restart_error_count++;
-//   }
-// }
-
-// void servo_send_pos(int ch, uint16_t pos, UART_HandleTypeDef *UartHandle){
-// 	if( UartHandle->Instance == USART3 ){				//USART3�̎�
-// 		tx3_buf[0] = 0x80 | (unsigned char)ch;// CMD
-// 		tx3_buf[1] = ((pos >> 7) & 0x007F);   // POS_H
-// 		tx3_buf[2] = (pos & 0x007F);          // POS_L
-// 		servo_transmit(UartHandle, tx3_buf, 3, GPIO_PIN_4);
-// 	}else if( UartHandle->Instance == USART4 ){//USART5�̎�
-// 		tx4_buf[0] = 0x80 | (unsigned char)ch;   // CMD
-// 		tx4_buf[1] = ((pos >> 7) & 0x007F);   // POS_H
-// 		tx4_buf[2] = (pos & 0x007F);          // POS_L
-// 		servo_transmit(UartHandle, tx4_buf, 3, GPIO_PIN_3);
-// 	}
-// }
-
-// void servo_req_status(int ch,unsigned char st, UART_HandleTypeDef *UartHandle){
-// 	if( UartHandle->Instance == USART3 ){				//USART3�̎�
-// 		tx3_buf[0] = 0xa0 | (unsigned char)ch;   // CMD
-// 		tx3_buf[1] = st;    					// POS_H
-// 		servo_transmit(UartHandle, tx3_buf, 2, GPIO_PIN_4);
-// 	}else if( UartHandle->Instance == USART4 ){//USART5�̎�
-// 		tx4_buf[0] = 0xa0 | (unsigned char)ch;   // CMD
-// 		tx4_buf[1] = st;    					// POS_H
-// 		servo_transmit(UartHandle, tx4_buf, 2, GPIO_PIN_3);
-// 	}
-// }
 /* USER CODE END 0 */
 
 /**
@@ -237,15 +128,13 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_DMA_Init();
   MX_FDCAN1_Init();
   MX_USART1_UART_Init();
   MX_SPI1_Init();
   MX_USART2_UART_Init();
-  MX_DMAMUX_Init();
-  MX_USART3_UART_Init();
-  MX_USART4_UART_Init();
+  //MX_DMAMUX_Init();
   MX_TIM14_Init();
+  MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
 
   //各レジスタ初期化
@@ -268,7 +157,10 @@ int main(void)
   HAL_UART_Receive_IT(&huart2, &recv_data, 1);
 
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, GPIO_PIN_RESET); // LED ON
-  HAL_TIM_Base_Start_IT(&htim14);
+  if (HAL_TIM_Base_Start_IT(&htim14) != HAL_OK)
+  {
+    Error_Handler();
+  }
   pos[0] = 7500;
 
   //FDCAN1 filter configuration
@@ -310,7 +202,9 @@ int main(void)
   // uint32_t last_servo_update = HAL_GetTick();
   // uint32_t last_position_update = HAL_GetTick();
   // uint32_t last_led_toggle = HAL_GetTick();
-  uint8_t high_position_selected = 1;
+
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
 
   while (1)
   {
@@ -347,31 +241,13 @@ int main(void)
 			//HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 0);
 		}
 
-    //イネーブル信号確認
-    enable_input = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_5); // イネーブル信号の状態を読み取る
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, ((4799 * 70) / 100));
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
+    HAL_Delay(2000);
 
-    uint16_t pos = high_position_selected ? 7500 : 5500;
-    uint8_t ch = 1;
-    tx3_buf[0] = 0x80 | (unsigned char)ch;
-    tx3_buf[1] = ((pos >> 7) & 0x007F);
-    tx3_buf[2] = (pos & 0x007F);
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_3, GPIO_PIN_SET);
-    //servo_delay_us(50);
-    HAL_StatusTypeDef servo_tx_status = HAL_UART_Transmit(&huart4, tx3_buf, 3, 10);
-    servo_delay_us(100);
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_3, GPIO_PIN_RESET);
-    servo_restart_receive(&huart4, rx4_buf, sizeof(rx4_buf));
-    int16_t debug_len = snprintf((char *)tx_buf, sizeof(tx_buf),
-                                 "USART4 Tx:%d repos[0..3]: %u %u %u %u\r\n",
-                                 servo_tx_status,
-                                 repos[0], repos[1], repos[2], repos[3]);
-    if (debug_len > 0 && debug_len < sizeof(tx_buf))
-    {
-      HAL_UART_Transmit(&huart2, tx_buf, debug_len, 100);
-    }
-    high_position_selected = !high_position_selected;
-
-    HAL_Delay(500);
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, ((4799 * 70) / 100));
+    HAL_Delay(2000);
 
     /* USER CODE END WHILE */
 
@@ -448,36 +324,6 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
      }
      HAL_UART_Receive_IT(&huart2, &recv_data, 1);
    }
-
-	uint8_t id=0;
-	int8_t ch=0;
-	if( huart->Instance == USART3 ){
-		id = rx3_buf[0] & 0x60;
-		ch = (rx3_buf[0] & 0x1f)-1;
-		if(ch >= 0 && ch < servo_max && id == 0x00){
-			repos[ch] = ((rx3_buf[1] << 7) & 0x3F80) + (rx3_buf[2] & 0x007F);
-		}else if(ch >= 0 && ch < servo_max && id == 0x20 ){
-			if(rx3_buf[1] == 0x03){
-				cur[ch] = rx3_buf[2];
-			}else if(rx3_buf[1] == 0x04){
-				temp[ch] = rx3_buf[2];
-			}
-		}
-		servo_restart_receive(&huart3, rx3_buf, sizeof(rx3_buf));
-	}else if( huart->Instance == USART4 ){
-		id = rx4_buf[0] & 0x60;
-		ch = (rx4_buf[0] & 0x1f)-1;
-		if(ch >= 0 && ch < servo_max && id == 0x00){
-			repos[ch] = ((rx4_buf[1] << 7) & 0x3F80) + (rx4_buf[2] & 0x007F);
-		}else if(ch >= 0 && ch < servo_max && id == 0x20 ){
-			if(rx4_buf[1] == 0x03){
-				cur[ch] = rx4_buf[2];
-			}else if(rx4_buf[1] == 0x04){
-				temp[ch] = rx4_buf[2];
-			}
-		}
-		servo_restart_receive(&huart4, rx4_buf, sizeof(rx4_buf));
-	}
 }
 
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *UartHandle){
@@ -499,7 +345,6 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *UartHandle)
 	{
 		servo_rx_error_count++;
 		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_3, GPIO_PIN_RESET);
-		servo_restart_receive(&huart4, rx4_buf, sizeof(rx4_buf));
 	}
 }
 /* USER CODE END 4 */
