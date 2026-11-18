@@ -241,12 +241,12 @@ int main(void)
 			//HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 0);
 		}
 
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, ((4799 * 70) / 100));
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, ((4799 * 60) / 100));
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
     HAL_Delay(2000);
 
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, ((4799 * 70) / 100));
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, ((4799 * 60) / 100));
     HAL_Delay(2000);
 
     /* USER CODE END WHILE */
